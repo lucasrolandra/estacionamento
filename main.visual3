@@ -1,0 +1,254 @@
+
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+import tkinter as tk
+from tkinter import messagebox
+from datetime import datetime
+from database import *
+import sqlite3
+import win32print
+import win32ui
+
+class EstacionamentoApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Sistema de Estacionamento")
+        self.root.geometry("900x600")
+
+        self.style = ttk.Style("flatly")  # Tema moderno (pode mudar para "darkly", "superhero", etc)
+
+        self.criar_menu()
+        self.criar_abas()
+        self.criar_widgets()
+
+    def criar_menu(self):
+        menubar = tk.Menu(self.root)
+        menu_arquivo = tk.Menu(menubar, tearoff=0)
+        menu_arquivo.add_command(label="Sair", command=self.root.quit)
+        menubar.add_cascade(label="Arquivo", menu=menu_arquivo)
+
+        menu_relatorios = tk.Menu(menubar, tearoff=0)
+        menu_relatorios.add_command(label="Diário", command=self.gerar_relatorio_diario)
+        menu_relatorios.add_command(label="Mensal", command=self.gerar_relatorio_mensal)
+        menu_relatorios.add_command(label="Personalizado", command=self.abrir_filtro_datas)
+        menubar.add_cascade(label="Relatórios", menu=menu_relatorios)
+
+        self.root.config(menu=menubar)
+
+    def criar_abas(self):
+        self.notebook = ttk.Notebook(self.root, bootstyle="primary")
+        self.aba_cadastro = ttk.Frame(self.notebook)
+        self.aba_entrada = ttk.Frame(self.notebook)
+        self.aba_saida = ttk.Frame(self.notebook)
+        self.aba_estacionados = ttk.Frame(self.notebook)
+        self.notebook.add(self.aba_cadastro, text="Cadastro")
+        self.notebook.add(self.aba_entrada, text="Entrada")
+        self.notebook.add(self.aba_saida, text="Saída")
+        self.notebook.add(self.aba_estacionados, text="Estacionados")
+        self.notebook.pack(expand=True, fill="both")
+
+    def criar_widgets(self):
+        def label(frame, text, row):
+            ttk.Label(frame, text=text, font=("Segoe UI", 11)).grid(row=row, column=0, padx=10, pady=8, sticky="e")
+
+        def entry(frame, var, row):
+            ent = ttk.Entry(frame, textvariable=var, font=("Segoe UI", 11), width=30)
+            ent.grid(row=row, column=1, padx=10, pady=8)
+            ent.bind("<KeyRelease>", self.forcar_maiusculas)
+            return ent
+
+        # Cadastro
+        self.placa_var = tk.StringVar()
+        self.modelo_var = tk.StringVar()
+        self.cor_var = tk.StringVar()
+        self.prop_var = tk.StringVar()
+
+        label(self.aba_cadastro, "Placa:", 0)
+        label(self.aba_cadastro, "Modelo:", 1)
+        label(self.aba_cadastro, "Cor:", 2)
+        label(self.aba_cadastro, "Proprietário:", 3)
+
+        self.placa_entry = entry(self.aba_cadastro, self.placa_var, 0)
+        self.modelo_entry = entry(self.aba_cadastro, self.modelo_var, 1)
+        self.cor_entry = entry(self.aba_cadastro, self.cor_var, 2)
+        self.proprietario_entry = entry(self.aba_cadastro, self.prop_var, 3)
+
+        ttk.Button(self.aba_cadastro, text="Cadastrar Veículo", command=self.cadastrar_veiculo, bootstyle="success").grid(row=4, column=0, columnspan=2, pady=15)
+
+        # Entrada
+        self.entrada_var = tk.StringVar()
+        label(self.aba_entrada, "Placa:", 0)
+        self.entrada_placa_entry = entry(self.aba_entrada, self.entrada_var, 0)
+        ttk.Button(self.aba_entrada, text="Registrar Entrada", command=self.registrar_entrada, bootstyle="primary").grid(row=1, column=0, columnspan=2, pady=15)
+
+        # Saída
+        self.saida_var = tk.StringVar()
+        self.valor_hora = tk.StringVar(value="5.00")
+        label(self.aba_saida, "Placa:", 0)
+        self.saida_placa_entry = entry(self.aba_saida, self.saida_var, 0)
+        label(self.aba_saida, "Valor por hora:", 1)
+        self.valor_hora_entry = entry(self.aba_saida, self.valor_hora, 1)
+        ttk.Button(self.aba_saida, text="Registrar Saída", command=self.registrar_saida, bootstyle="warning").grid(row=2, column=0, columnspan=2, pady=15)
+
+        # Estacionados
+        self.tree = ttk.Treeview(self.aba_estacionados, columns=("Placa", "Modelo", "Cor", "Entrada"), show="headings", bootstyle="info")
+        for col in self.tree["columns"]:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, anchor="center")
+        self.tree.pack(expand=True, fill="both", padx=10, pady=10)
+        ttk.Button(self.aba_estacionados, text="Atualizar Lista", command=self.atualizar_estacionados).pack(pady=5)
+
+    def forcar_maiusculas(self, event):
+        widget = event.widget
+        texto = widget.get()
+        widget.delete(0, tk.END)
+        widget.insert(0, texto.upper())
+
+    def cadastrar_veiculo(self):
+        if all([self.placa_var.get(), self.modelo_var.get(), self.cor_var.get(), self.prop_var.get()]):
+            if cadastrar_veiculo(self.placa_var.get(), self.modelo_var.get(), self.cor_var.get(), self.prop_var.get()):
+                messagebox.showinfo("Sucesso", "Veículo cadastrado com sucesso!")
+            else:
+                messagebox.showerror("Erro", "Placa já cadastrada!")
+        else:
+            messagebox.showwarning("Aviso", "Preencha todos os campos!")
+
+    def registrar_entrada(self):
+        placa = self.entrada_var.get()
+        if registrar_entrada(placa):
+            veiculo = self.buscar_veiculo_por_placa(placa)
+            if veiculo:
+                self.imprimir_ticket("ENTRADA", placa, *veiculo)
+            messagebox.showinfo("Sucesso", f"Entrada de {placa} registrada.")
+            self.atualizar_estacionados()
+        else:
+            messagebox.showerror("Erro", "Erro ao registrar entrada.")
+
+    def registrar_saida(self):
+        placa = self.saida_var.get()
+        try:
+            valor = float(self.valor_hora.get())
+            total = registrar_saida(placa, valor)
+            if total is not None:
+                self.imprimir_ticket("SAÍDA", placa, valor_pago=total)
+                messagebox.showinfo("Saída registrada", f"Valor: R$ {total:.2f}")
+                self.atualizar_estacionados()
+            else:
+                messagebox.showerror("Erro", "Veículo não encontrado ou já saiu.")
+        except ValueError:
+            messagebox.showerror("Erro", "Valor por hora inválido.")
+
+    def atualizar_estacionados(self):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        for v in listar_veiculos_estacionados():
+            entrada_formatada = datetime.strptime(v[3], '%Y-%m-%d %H:%M:%S.%f').strftime('%d/%m %H:%M')
+            self.tree.insert("", tk.END, values=(v[0], v[1], v[2], entrada_formatada))
+
+    def buscar_veiculo_por_placa(self, placa):
+        conn = sqlite3.connect('estacionamento.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT modelo, cor, proprietario FROM veiculos WHERE placa = ?", (placa,))
+        v = cursor.fetchone()
+        conn.close()
+        return v
+
+    def imprimir_ticket(self, tipo, placa, modelo="", cor="", proprietario="", valor_pago=None):
+        linhas = [f"TICKET DE {tipo}", f"Placa: {placa}"]
+        if tipo == "ENTRADA":
+            linhas += [f"Modelo: {modelo}", f"Cor: {cor}", f"Proprietário: {proprietario}"]
+        if tipo == "SAÍDA" and valor_pago is not None:
+            linhas.append(f"Valor Pago: R$ {valor_pago:.2f}")
+        linhas.append(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        try:
+            pdc = win32ui.CreateDC()
+            pdc.CreatePrinterDC(win32print.GetDefaultPrinter())
+            pdc.StartDoc(f"Ticket {tipo}")
+            pdc.StartPage()
+            x, y, dy = 100, 100, 150
+            for linha in linhas:
+                pdc.TextOut(x, y, linha)
+                y += dy
+            pdc.EndPage()
+            pdc.EndDoc()
+            pdc.DeleteDC()
+        except Exception as e:
+            messagebox.showerror("Erro de impressão", str(e))
+
+    def gerar_relatorio_diario(self):
+        hoje = datetime.now().strftime('%Y-%m-%d')
+        conn = sqlite3.connect('estacionamento.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT v.placa, v.modelo, m.entrada, m.saida, m.valor_pago
+            FROM veiculos v
+            JOIN movimentacoes m ON v.id = m.veiculo_id
+            WHERE date(m.entrada) = date(?)
+        ''', (hoje,))
+        self.mostrar_relatorio(cursor.fetchall(), f"Relatório Diário - {datetime.now().strftime('%d/%m/%Y')}")
+
+    def gerar_relatorio_mensal(self):
+        mes_atual = datetime.now().strftime('%Y-%m')
+        conn = sqlite3.connect('estacionamento.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT v.placa, v.modelo, m.entrada, m.saida, m.valor_pago
+            FROM veiculos v
+            JOIN movimentacoes m ON v.id = m.veiculo_id
+            WHERE strftime('%Y-%m', m.entrada) = ?
+        ''', (mes_atual,))
+        self.mostrar_relatorio(cursor.fetchall(), f"Relatório Mensal - {datetime.now().strftime('%m/%Y')}")
+
+    def abrir_filtro_datas(self):
+        janela = ttk.Toplevel(self.root)
+        janela.title("Relatório por Datas")
+        janela.geometry("300x150")
+        ttk.Label(janela, text="Data Inicial (DD/MM/AAAA):").pack(pady=5)
+        data_inicio_entry = ttk.Entry(janela)
+        data_inicio_entry.pack()
+        ttk.Label(janela, text="Data Final (DD/MM/AAAA):").pack(pady=5)
+        data_fim_entry = ttk.Entry(janela)
+        data_fim_entry.pack()
+
+        def gerar():
+            try:
+                d1 = datetime.strptime(data_inicio_entry.get(), "%d/%m/%Y")
+                d2 = datetime.strptime(data_fim_entry.get(), "%d/%m/%Y")
+                relatorio = self.gerar_relatorio_intervalo(d1, d2)
+                self.mostrar_relatorio(relatorio, f"Relatório de {data_inicio_entry.get()} a {data_fim_entry.get()}")
+                janela.destroy()
+            except:
+                messagebox.showerror("Erro", "Datas inválidas.")
+
+        ttk.Button(janela, text="Gerar", command=gerar, bootstyle="primary").pack(pady=10)
+
+    def gerar_relatorio_intervalo(self, d1, d2):
+        conn = sqlite3.connect('estacionamento.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT v.placa, v.modelo, m.entrada, m.saida, m.valor_pago
+            FROM veiculos v
+            JOIN movimentacoes m ON v.id = m.veiculo_id
+            WHERE date(m.entrada) BETWEEN date(?) AND date(?)
+        ''', (d1.strftime('%Y-%m-%d'), d2.strftime('%Y-%m-%d')))
+        return cursor.fetchall()
+
+    def mostrar_relatorio(self, relatorio, titulo):
+        janela = ttk.Toplevel(self.root)
+        janela.title(titulo)
+        janela.geometry("850x400")
+        tree = ttk.Treeview(janela, columns=("Placa", "Modelo", "Entrada", "Saída", "Valor"), show="headings", bootstyle="info")
+        for col in tree["columns"]:
+            tree.heading(col, text=col)
+            tree.column(col, anchor="center")
+        for item in relatorio:
+            entrada = datetime.strptime(item[2], "%Y-%m-%d %H:%M:%S.%f").strftime("%d/%m %H:%M")
+            saida = datetime.strptime(item[3], "%Y-%m-%d %H:%M:%S.%f").strftime("%d/%m %H:%M") if item[3] else "-"
+            valor = f"R$ {item[4]:.2f}" if item[4] else "-"
+            tree.insert("", tk.END, values=(item[0], item[1], entrada, saida, valor))
+        tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+if __name__ == "__main__":
+    criar_banco_dados()
+    app = EstacionamentoApp(ttk.Window())
+    app.root.mainloop()

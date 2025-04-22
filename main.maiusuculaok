@@ -1,0 +1,239 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+from datetime import datetime
+from database import *
+import sqlite3
+import win32print
+import win32ui
+
+class EstacionamentoApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Sistema de Estacionamento")
+        self.root.geometry("800x600")
+
+        self.criar_menu()
+        self.criar_abas()
+        self.criar_widgets()
+
+    def criar_menu(self):
+        menubar = tk.Menu(self.root)
+        menu_arquivo = tk.Menu(menubar, tearoff=0)
+        menu_arquivo.add_command(label="Sair", command=self.root.quit)
+        menubar.add_cascade(label="Arquivo", menu=menu_arquivo)
+
+        menu_relatorios = tk.Menu(menubar, tearoff=0)
+        menu_relatorios.add_command(label="Diário", command=self.gerar_relatorio_diario)
+        menu_relatorios.add_command(label="Mensal", command=self.gerar_relatorio_mensal)
+        menubar.add_cascade(label="Relatórios", menu=menu_relatorios)
+
+        self.root.config(menu=menubar)
+
+    def criar_abas(self):
+        self.notebook = ttk.Notebook(self.root)
+        self.aba_cadastro = ttk.Frame(self.notebook)
+        self.aba_entrada = ttk.Frame(self.notebook)
+        self.aba_saida = ttk.Frame(self.notebook)
+        self.aba_estacionados = ttk.Frame(self.notebook)
+
+        self.notebook.add(self.aba_cadastro, text="Cadastro")
+        self.notebook.add(self.aba_entrada, text="Entrada")
+        self.notebook.add(self.aba_saida, text="Saída")
+        self.notebook.add(self.aba_estacionados, text="Estacionados")
+        self.notebook.pack(expand=True, fill="both")
+
+    def criar_widgets(self):
+        # Aba Cadastro
+        tk.Label(self.aba_cadastro, text="Placa:").grid(row=0, column=0, padx=10, pady=5)
+        self.placa_entry = tk.Entry(self.aba_cadastro)
+        self.placa_entry.grid(row=0, column=1, padx=10, pady=5)
+        self.placa_entry.bind("<KeyRelease>", self.forcar_maiusculas)
+
+        tk.Label(self.aba_cadastro, text="Modelo:").grid(row=1, column=0, padx=10, pady=5)
+        self.modelo_entry = tk.Entry(self.aba_cadastro)
+        self.modelo_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        tk.Label(self.aba_cadastro, text="Cor:").grid(row=2, column=0, padx=10, pady=5)
+        self.cor_entry = tk.Entry(self.aba_cadastro)
+        self.cor_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        tk.Label(self.aba_cadastro, text="Proprietário:").grid(row=3, column=0, padx=10, pady=5)
+        self.proprietario_entry = tk.Entry(self.aba_cadastro)
+        self.proprietario_entry.grid(row=3, column=1, padx=10, pady=5)
+
+        tk.Button(self.aba_cadastro, text="Cadastrar Veículo", command=self.cadastrar_veiculo).grid(row=4, column=0, columnspan=2, pady=10)
+
+        # Aba Entrada
+        tk.Label(self.aba_entrada, text="Placa do Veículo:").grid(row=0, column=0, padx=10, pady=5)
+        self.entrada_placa_entry = tk.Entry(self.aba_entrada)
+        self.entrada_placa_entry.grid(row=0, column=1, padx=10, pady=5)
+        self.entrada_placa_entry.bind("<KeyRelease>", self.forcar_maiusculas)
+
+        tk.Button(self.aba_entrada, text="Registrar Entrada", command=self.registrar_entrada).grid(row=1, column=0, columnspan=2, pady=10)
+
+        # Aba Saída
+        tk.Label(self.aba_saida, text="Placa do Veículo:").grid(row=0, column=0, padx=10, pady=5)
+        self.saida_placa_entry = tk.Entry(self.aba_saida)
+        self.saida_placa_entry.grid(row=0, column=1, padx=10, pady=5)
+        self.saida_placa_entry.bind("<KeyRelease>", self.forcar_maiusculas)
+
+        tk.Label(self.aba_saida, text="Valor por hora:").grid(row=1, column=0, padx=10, pady=5)
+        self.valor_hora_entry = tk.Entry(self.aba_saida)
+        self.valor_hora_entry.insert(0, "5.00")
+        self.valor_hora_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        tk.Button(self.aba_saida, text="Registrar Saída", command=self.registrar_saida).grid(row=2, column=0, columnspan=2, pady=10)
+
+        # Aba Estacionados
+        self.tree = ttk.Treeview(self.aba_estacionados, columns=("Placa", "Modelo", "Cor", "Entrada"), show="headings")
+        self.tree.heading("Placa", text="Placa")
+        self.tree.heading("Modelo", text="Modelo")
+        self.tree.heading("Cor", text="Cor")
+        self.tree.heading("Entrada", text="Entrada")
+        self.tree.pack(fill="both", expand=True, padx=10, pady=10)
+        tk.Button(self.aba_estacionados, text="Atualizar Lista", command=self.atualizar_estacionados).pack(pady=5)
+
+    def forcar_maiusculas(self, event):
+        widget = event.widget
+        texto = widget.get()
+        widget.delete(0, tk.END)
+        widget.insert(0, texto.upper())
+
+    def cadastrar_veiculo(self):
+        placa = self.placa_entry.get().upper()
+        modelo = self.modelo_entry.get()
+        cor = self.cor_entry.get()
+        proprietario = self.proprietario_entry.get()
+        if placa and modelo and cor and proprietario:
+            if cadastrar_veiculo(placa, modelo, cor, proprietario):
+                messagebox.showinfo("Sucesso", "Veículo cadastrado com sucesso!")
+                self.placa_entry.delete(0, tk.END)
+                self.modelo_entry.delete(0, tk.END)
+                self.cor_entry.delete(0, tk.END)
+                self.proprietario_entry.delete(0, tk.END)
+            else:
+                messagebox.showerror("Erro", "Veículo com esta placa já está cadastrado!")
+        else:
+            messagebox.showwarning("Aviso", "Preencha todos os campos!")
+
+    def registrar_entrada(self):
+        placa = self.entrada_placa_entry.get().upper()
+        if placa:
+            if registrar_entrada(placa):
+                veiculo = self.buscar_veiculo_por_placa(placa)
+                if veiculo:
+                    modelo, cor, proprietario = veiculo
+                    self.imprimir_ticket("ENTRADA", placa, modelo, cor, proprietario)
+                messagebox.showinfo("Sucesso", f"Entrada do veículo {placa} registrada!")
+                self.entrada_placa_entry.delete(0, tk.END)
+                self.atualizar_estacionados()
+            else:
+                messagebox.showerror("Erro", "Veículo não encontrado ou já está estacionado!")
+        else:
+            messagebox.showwarning("Aviso", "Informe a placa do veículo!")
+
+    def registrar_saida(self):
+        placa = self.saida_placa_entry.get().upper()
+        valor_hora = self.valor_hora_entry.get()
+        try:
+            valor_hora = float(valor_hora)
+            if placa:
+                valor_pago = registrar_saida(placa, valor_hora)
+                if valor_pago is not None:
+                    self.imprimir_ticket("SAÍDA", placa, valor_pago=valor_pago)
+                    messagebox.showinfo("Sucesso", f"Saída registrada. Valor a pagar: R$ {valor_pago:.2f}")
+                    self.saida_placa_entry.delete(0, tk.END)
+                    self.atualizar_estacionados()
+                else:
+                    messagebox.showerror("Erro", "Veículo não encontrado ou não está estacionado!")
+            else:
+                messagebox.showwarning("Aviso", "Informe a placa do veículo!")
+        except ValueError:
+            messagebox.showerror("Erro", "Valor por hora inválido!")
+
+    def atualizar_estacionados(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        veiculos = listar_veiculos_estacionados()
+        for veiculo in veiculos:
+            placa, modelo, cor, entrada = veiculo
+            entrada_formatada = datetime.strptime(entrada, '%Y-%m-%d %H:%M:%S.%f').strftime('%d/%m %H:%M')
+            self.tree.insert("", tk.END, values=(placa, modelo, cor, entrada_formatada))
+
+    def gerar_relatorio_diario(self):
+        data = datetime.now().strftime('%d/%m/%Y')
+        relatorio = gerar_relatorio(data)
+        self.mostrar_relatorio(relatorio, f"Relatório Diário - {data}")
+
+    def gerar_relatorio_mensal(self):
+        mes_ano = datetime.now().strftime('%m/%Y')
+        relatorio = gerar_relatorio()
+        self.mostrar_relatorio(relatorio, f"Relatório Mensal - {mes_ano}")
+
+    def mostrar_relatorio(self, relatorio, titulo):
+        janela = tk.Toplevel(self.root)
+        janela.title(titulo)
+        janela.geometry("800x400")
+        tree = ttk.Treeview(janela, columns=("Placa", "Modelo", "Entrada", "Saída", "Valor"), show="headings")
+        tree.heading("Placa", text="Placa")
+        tree.heading("Modelo", text="Modelo")
+        tree.heading("Entrada", text="Entrada")
+        tree.heading("Saída", text="Saída")
+        tree.heading("Valor", text="Valor")
+        for item in relatorio:
+            placa, modelo, entrada, saida, valor = item
+            entrada_fmt = datetime.strptime(entrada, '%Y-%m-%d %H:%M:%S.%f').strftime('%d/%m %H:%M')
+            saida_fmt = datetime.strptime(saida, '%Y-%m-%d %H:%M:%S.%f').strftime('%d/%m %H:%M') if saida else "-"
+            valor_fmt = f"R$ {valor:.2f}" if valor else "-"
+            tree.insert("", tk.END, values=(placa, modelo, entrada_fmt, saida_fmt, valor_fmt))
+        tree.pack(fill="both", expand=True, padx=10, pady=10)
+        tk.Button(janela, text="Fechar", command=janela.destroy).pack(pady=5)
+
+    def buscar_veiculo_por_placa(self, placa):
+        conn = sqlite3.connect('estacionamento.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT modelo, cor, proprietario FROM veiculos WHERE placa = ?', (placa,))
+        resultado = cursor.fetchone()
+        conn.close()
+        return resultado
+
+    def imprimir_ticket(self, tipo, placa, modelo="", cor="", proprietario="", valor_pago=None):
+        linhas = [
+            f"==== TICKET DE {tipo} ====",
+            f"Placa: {placa}"
+        ]
+        if tipo == "ENTRADA":
+            linhas += [
+                f"Modelo: {modelo}",
+                f"Cor: {cor}",
+                f"Proprietário: {proprietario}"
+            ]
+        if tipo == "SAÍDA" and valor_pago is not None:
+            linhas.append(f"Valor Pago: R$ {valor_pago:.2f}")
+        linhas.append(f"Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        linhas.append("=" * 32)
+
+        try:
+            printer_name = win32print.GetDefaultPrinter()
+            hprinter = win32print.OpenPrinter(printer_name)
+            pdc = win32ui.CreateDC()
+            pdc.CreatePrinterDC(printer_name)
+            pdc.StartDoc(f"Ticket {tipo}")
+            pdc.StartPage()
+
+            x, y, dy = 100, 100, 150
+            for linha in linhas:
+                pdc.TextOut(x, y, linha)
+                y += dy
+
+            pdc.EndPage()
+            pdc.EndDoc()
+            pdc.DeleteDC()
+        except Exception as e:
+            messagebox.showerror("Erro de Impressão", f"Erro ao imprimir ticket:\n{e}")
+
+if __name__ == "__main__":
+    criar_banco_dados()
+    root = tk.Tk()
+    app = EstacionamentoApp(root)
+    root.mainloop()
